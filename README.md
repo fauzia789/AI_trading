@@ -1,3 +1,6 @@
+Here's an updated version of your `README.md` with the new changes:
+
+```markdown
 # Stock Price Prediction Using LSTM
 
 ## 📌 Overview
@@ -36,10 +39,12 @@ This project predicts stock prices using **Long Short-Term Memory (LSTM)**, a de
 git clone https://github.com/your-username/Stock-Prediction-LSTM.git
 cd Stock-Prediction-LSTM
 ```
+
 ### 2️⃣ Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
+
 ### 3️⃣ Get Your Alpha Vantage API Key
 - Sign up at [Alpha Vantage](https://www.alphavantage.co/) and get an API key.
 - Add it to the `stock_data.py` file:
@@ -47,10 +52,12 @@ pip install -r requirements.txt
 api_key = 'your_api_key'
 ts = TimeSeries(key=api_key, output_format='pandas')
 ```
+
 ### 4️⃣ Train the LSTM Model (Optional)
 ```bash
 python model_training.py
 ```
+
 ### 5️⃣ Run the Streamlit Web App
 ```bash
 streamlit run app.py
@@ -72,6 +79,6 @@ This project is open-source under the **MIT License**.
 
 ## 🤝 Contributing
 Feel free to submit pull requests or open issues for improvements!
+```
 
----
-
+This updated `README.md` reflects the changes you mentioned and includes the new features and improvements.

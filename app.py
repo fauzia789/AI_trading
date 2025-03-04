@@ -3,10 +3,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import pandas_datareader.data as data
 from datetime import datetime
-from alpha_vantage.timeseries import TimeSeries  # Alpha Vantage API
+from alpha_vantage.timeseries import TimeSeries
 import streamlit as st
 from sklearn.preprocessing import MinMaxScaler
-from tensorflow.keras.models import load_model
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, LSTM
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
 
 # Streamlit UI setup
 st.title('Stock Trend Prediction')
@@ -14,94 +18,118 @@ st.title('Stock Trend Prediction')
 # User input for stock ticker
 user_input = st.text_input('Enter Stock Ticker', 'AAPL')
 start = '2010-01-01'
-end = '2019-12-31'
+end = '2023-12-31'
 
-# Alpha Vantage API Key (replace 'your_alpha_vantage_api_key' with your actual API key)
+# Alpha Vantage API Key
 api_key = 'your_alpha_vantage_api_key'
-
-# Create a TimeSeries object from Alpha Vantage
 ts = TimeSeries(key=api_key, output_format='pandas')
 
-# Fetch the stock data using Alpha Vantage (daily data for the given ticker)
 try:
     data, meta_data = ts.get_daily(symbol=user_input, outputsize='full')
     
-    # Check if the data was returned properly
     if data.empty:
         st.error("No data fetched for the given symbol.")
     else:
-        st.subheader(f"Data for {user_input} from 2010-2019")
+        # Sort data by date to ensure it's in ascending order
+        data = data.sort_index()
+
+        st.subheader(f"Data for {user_input} from 2010-2023")
         st.write(data.describe())
-
-        # Visualizing the Closing Price vs Time chart
+        
+        # Visualizing Closing Price
         st.subheader('Closing Price vs Time chart')
-        fig = plt.figure(figsize=(12, 6))
-        plt.plot(data['4. close'])  # Closing price column from Alpha Vantage response
-        plt.title(f"{user_input} Closing Price")
-        st.pyplot(fig)
-
-        # Visualization with 100-day Moving Average (MA)
-        st.subheader('Closing Price vs Time chart with 100MA')
-        ma100 = data['4. close'].rolling(100).mean()
-        fig = plt.figure(figsize=(12, 6))
-        plt.plot(ma100)
-        plt.plot(data['4. close'])
-        st.pyplot(fig)
-
-        # Visualization with 100-day and 200-day Moving Averages (MA)
-        st.subheader('Closing Price vs Time chart with 100MA & 200MA')
-        ma200 = data['4. close'].rolling(200).mean()
-        fig = plt.figure(figsize=(12, 6))
-        plt.plot(ma100, 'r', label='100MA')
-        plt.plot(ma200, 'g', label='200MA')
-        plt.plot(data['4. close'], 'b', label='Closing Price')
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.plot(data['4. close'], label='Closing Price')
         plt.legend()
         st.pyplot(fig)
 
-        # Splitting the data into training and testing sets
-        data_training = pd.DataFrame(data['4. close'][0:int(len(data) * 0.70)])
-        data_testing = pd.DataFrame(data['4. close'][int(len(data) * 0.70):])
+        # Splitting the data
+        train_data = data['4. close']['2010-01-01':'2023-12-31']
+        test_data = data['4. close']['2024-01-01':]
 
         # Scaling data
         scaler = MinMaxScaler(feature_range=(0, 1))
-        data_training_array = scaler.fit_transform(data_training)
+        train_scaled = scaler.fit_transform(np.array(train_data).reshape(-1, 1))
 
-        # Load pre-trained model
-        try:
-            model = load_model('keras_model.keras')
-        except Exception as e:
-            st.error(f"Error loading model: {e}")
-            st.stop()
+        # Prepare data for LSTM model
+        def create_dataset(dataset, time_step=100):
+            x_data, y_data = [], []
+            for i in range(time_step, len(dataset)):
+                x_data.append(dataset[i-time_step:i, 0])
+                y_data.append(dataset[i, 0])
+            return np.array(x_data), np.array(y_data)
 
-        # Prepare input data for prediction
-        past_100_days = data_training.tail(100)
-        final_df = pd.concat([past_100_days, data_testing], ignore_index=True)
-        input_data = scaler.transform(final_df)
+        # Creating datasets for training
+        x_train, y_train = create_dataset(train_scaled)
+        x_train = x_train.reshape(x_train.shape[0], x_train.shape[1], 1)
 
-        x_test = []
-        y_test = []
+        # Building the LSTM model
+        model = Sequential()
+        model.add(LSTM(units=50, return_sequences=True, input_shape=(x_train.shape[1], 1)))
+        model.add(LSTM(units=50, return_sequences=False))
+        model.add(Dense(units=1))
 
-        for i in range(100, input_data.shape[0]):
-            x_test.append(input_data[i-100:i])
-            y_test.append(input_data[i, 0])
+        model.compile(optimizer='adam', loss='mean_squared_error')
 
-        x_test, y_test = np.array(x_test), np.array(y_test)
+        # Train the model
+        model.fit(x_train, y_train, epochs=10, batch_size=32, verbose=1)
 
-        # Make predictions using the model
-        y_predicted = model.predict(x_test)
-
-        # Rescale the predictions and actual values
+        # LSTM Predictions
+        past_100_days = train_data[-100:]
+        final_df = pd.concat([past_100_days, test_data], ignore_index=True)
+        input_data = scaler.transform(final_df.values.reshape(-1, 1))
+        
+        x_test, y_test = create_dataset(input_data)
+        x_test = x_test.reshape(x_test.shape[0], x_test.shape[1], 1)
+        y_pred_lstm = model.predict(x_test)
+        
+        # Rescale Predictions
         scale_factor = 1 / scaler.scale_[0]
-        y_predicted = y_predicted * scale_factor
+        y_pred_lstm = y_pred_lstm * scale_factor
         y_test = y_test * scale_factor
-
-        # Plotting the results
+        
+        # Evaluate LSTM
+        mse_lstm = mean_squared_error(y_test, y_pred_lstm)
+        rmse_lstm = np.sqrt(mse_lstm)
+        mae_lstm = mean_absolute_error(y_test, y_pred_lstm)
+        
+        # Linear Regression (for test data)
+        lin_model = LinearRegression()
+        lin_train_X = np.arange(len(train_data)).reshape(-1, 1)
+        lin_train_y = np.array(train_data).reshape(-1, 1)
+        lin_model.fit(lin_train_X, lin_train_y)
+        
+        # Adjust Linear Regression prediction to match test period
+        lin_test_X = np.arange(len(train_data), len(train_data) + len(test_data)).reshape(-1, 1)
+        lin_pred = lin_model.predict(lin_test_X)
+        
+        mse_lin = mean_squared_error(y_test, lin_pred)
+        rmse_lin = np.sqrt(mse_lin)
+        mae_lin = mean_absolute_error(y_test, lin_pred)
+        
+        # Random Forest (for test data)
+        rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
+        rf_model.fit(lin_train_X, lin_train_y.ravel())
+        
+        rf_pred = rf_model.predict(lin_test_X)
+        
+        mse_rf = mean_squared_error(y_test, rf_pred)
+        rmse_rf = np.sqrt(mse_rf)
+        mae_rf = mean_absolute_error(y_test, rf_pred)
+        
+        # Display errors
+        st.subheader('Model Evaluation')
+        st.write(f'**LSTM:** MSE={mse_lstm:.2f}, RMSE={rmse_lstm:.2f}, MAE={mae_lstm:.2f}')
+        st.write(f'**Linear Regression:** MSE={mse_lin:.2f}, RMSE={rmse_lin:.2f}, MAE={mae_lin:.2f}')
+        st.write(f'**Random Forest:** MSE={mse_rf:.2f}, RMSE={rmse_rf:.2f}, MAE={mae_rf:.2f}')
+        
+        # Visualization
         st.subheader('Predictions vs Original')
-        fig2 = plt.figure(figsize=(12, 6))
-        plt.plot(y_test, 'b', label='Original Price')
-        plt.plot(y_predicted, 'r', label='Predicted Price')
-        plt.xlabel('Time')
-        plt.ylabel('Price')
+        fig2, ax = plt.subplots(figsize=(12, 6))
+        ax.plot(y_test, 'b', label='Original Price')
+        ax.plot(y_pred_lstm, 'r', label='LSTM Prediction')
+        ax.plot(lin_pred, 'g', label='Linear Regression Prediction')
+        ax.plot(rf_pred, 'y', label='Random Forest Prediction')
         plt.legend()
         st.pyplot(fig2)
 
