@@ -77,8 +77,4 @@ streamlit run app.py
 ## 📜 License
 This project is open-source under the **MIT License**.
 
-## 🤝 Contributing
-Feel free to submit pull requests or open issues for improvements!
-```
 
-This updated `README.md` reflects the changes you mentioned and includes the new features and improvements.
